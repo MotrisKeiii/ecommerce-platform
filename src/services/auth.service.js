@@ -1,5 +1,6 @@
 import bcrypt from "bcrypt";
 import pool from "../config/database.js";
+import AppError from "../utils/AppError.js";
 
 export const register = async ({ name, email, password, phone }) => {
   const [existingUsers] = await pool.query(
@@ -8,7 +9,7 @@ export const register = async ({ name, email, password, phone }) => {
   );
 
   if (existingUsers.length > 0) {
-    throw new Error("Email already exists");
+    throw new AppError("Email already exists", 409);
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
@@ -42,7 +43,7 @@ export const login = async ({ email, password }) => {
   );
 
   if (users.length === 0) {
-    throw new Error("Invalid email or password");
+    throw new AppError("Invalid email or password", 401);
   }
 
   const user = users[0];
@@ -50,11 +51,11 @@ export const login = async ({ email, password }) => {
   const isPasswordValid = await bcrypt.compare(password, user.password_hash);
 
   if (!isPasswordValid) {
-    throw new Error("Invalid email or password");
+    throw new AppError("Invalid email or password", 401);
   }
 
   if (user.status !== "active") {
-    throw new Error("Account is not active");
+    throw new AppError("Account is not active", 403);
   }
 
   return {

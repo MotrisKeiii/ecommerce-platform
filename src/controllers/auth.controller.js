@@ -4,7 +4,7 @@ import { register, login } from "../services/auth.service.js";
 
 import { registerSchema, loginSchema } from "../validators/auth.validator.js";
 
-export const registerController = async (req, res) => {
+export const registerController = async (req, res, next) => {
   try {
     const validatedData = registerSchema.parse(req.body);
 
@@ -16,15 +16,11 @@ export const registerController = async (req, res) => {
       message: "Register successfully",
     });
   } catch (error) {
-    return res.status(400).json({
-      success: false,
-      data: null,
-      message: error.message,
-    });
+    next(error);
   }
 };
 
-export const loginController = async (req, res) => {
+export const loginController = async (req, res, next) => {
   try {
     const validatedData = loginSchema.parse(req.body);
 
@@ -54,11 +50,7 @@ export const loginController = async (req, res) => {
       message: "Login successfully",
     });
   } catch (error) {
-    return res.status(400).json({
-      success: false,
-      data: null,
-      message: error.message,
-    });
+    next(error);
   }
 };
 
