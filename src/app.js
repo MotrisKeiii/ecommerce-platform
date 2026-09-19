@@ -10,6 +10,7 @@ import productVariantRoutes from "./routes/product-variant.routes.js";
 import productImageRoutes from "./routes/product-image.routes.js";
 import productImageItemRoutes from "./routes/product-image-item.routes.js";
 import addressRoutes from "./routes/address.routes.js";
+import cartRoutes from "./routes/cart.routes.js";
 
 import { errorMiddleware } from "./middlewares/error.middleware.js";
 
@@ -35,6 +36,7 @@ app.use("/api/product-variants", productVariantRoutes);
 app.use("/api/products", productImageRoutes);
 app.use("/api/product-images", productImageItemRoutes);
 app.use("/api/addresses", addressRoutes);
+app.use("/api/cart", cartRoutes);
 
 app.use(errorMiddleware);
 
