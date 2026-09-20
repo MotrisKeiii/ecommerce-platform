@@ -11,6 +11,13 @@ import productImageRoutes from "./routes/product-image.routes.js";
 import productImageItemRoutes from "./routes/product-image-item.routes.js";
 import addressRoutes from "./routes/address.routes.js";
 import cartRoutes from "./routes/cart.routes.js";
+import wishlistRoutes from "./routes/wishlist.routes.js";
+import couponRoutes from "./routes/coupon.routes.js";
+import reviewRoutes from "./routes/review.routes.js";
+import adminReviewRoutes from "./routes/admin-review.routes.js";
+import paymentRoutes from "./routes/payment.routes.js";
+import checkoutRoutes from "./routes/checkout.routes.js";
+import orderRoutes from "./routes/order.routes.js";
 
 import { errorMiddleware } from "./middlewares/error.middleware.js";
 
@@ -37,7 +44,16 @@ app.use("/api/products", productImageRoutes);
 app.use("/api/product-images", productImageItemRoutes);
 app.use("/api/addresses", addressRoutes);
 app.use("/api/cart", cartRoutes);
+app.use("/api/wishlist", wishlistRoutes);
+app.use("/api/coupons", couponRoutes);
+app.use("/api/reviews", reviewRoutes);
+app.use("/api/admin/reviews", adminReviewRoutes);
+app.use("/api/payments", paymentRoutes);
+app.use("/api/checkout", checkoutRoutes);
+app.use("/api/orders", orderRoutes);
 
 app.use(errorMiddleware);
 
 export default app;
+
+
