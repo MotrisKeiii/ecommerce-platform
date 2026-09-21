@@ -1,11 +1,12 @@
 import { z } from "zod";
 
 export const createProductImageSchema = z.object({
-  imageUrl: z.string().url("Invalid image URL"),
+  isPrimary: z
+    .string()
+    .transform((value) => value === "true")
+    .optional(),
 
-  isPrimary: z.boolean().optional(),
-
-  sortOrder: z.number().int().nonnegative().optional(),
+  sortOrder: z.coerce.number().int().nonnegative().optional(),
 });
 
 export const updateProductImageSchema = createProductImageSchema.partial();

@@ -1,9 +1,11 @@
 import pool from "../config/database.js";
 import AppError from "../utils/AppError.js";
+import cloudinary from "../config/cloudinary.js";
 
 export const createProductImage = async ({
   productId,
   imageUrl,
+  publicId,
   isPrimary,
   sortOrder,
 }) => {
@@ -40,18 +42,20 @@ export const createProductImage = async ({
       (
         product_id,
         image_url,
+        public_id,
         is_primary,
         sort_order
       )
-      VALUES (?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?)
     `,
-    [productId, imageUrl, isPrimary ?? false, sortOrder ?? 0],
+    [productId, imageUrl, publicId, isPrimary ?? false, sortOrder ?? 0],
   );
 
   return {
     id: result.insertId,
     productId,
     imageUrl,
+    publicId,
     isPrimary: isPrimary ?? false,
     sortOrder: sortOrder ?? 0,
   };
@@ -180,6 +184,7 @@ export const deleteProductImage = async (id) => {
       SELECT
         id,
         product_id,
+        public_id,
         is_primary
       FROM product_images
       WHERE id = ?
@@ -189,6 +194,14 @@ export const deleteProductImage = async (id) => {
 
   if (images.length === 0) {
     throw new AppError("Product image not found", 404);
+  }
+
+  const image = images[0];
+
+  if (image.public_id) {
+    await cloudinary.uploader.destroy(image.public_id, {
+      resource_type: "image",
+    });
   }
 
   await pool.query(

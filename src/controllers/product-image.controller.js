@@ -11,13 +11,25 @@ import {
   updateProductImageSchema,
 } from "../validators/product-image.validator.js";
 
+import AppError from "../utils/AppError.js";
+import { uploadImage } from "../services/cloudinary.service.js";
+
 export const createProductImageController = async (req, res, next) => {
   try {
     const validatedData = createProductImageSchema.parse(req.body);
 
+    if (!req.file) {
+      throw new AppError("Image file is required", 400);
+    }
+
+    const uploadResult = await uploadImage(req.file.buffer);
+
     const image = await createProductImage({
-      ...validatedData,
       productId: Number(req.params.productId),
+      imageUrl: uploadResult.secure_url,
+      publicId: uploadResult.public_id,
+      isPrimary: validatedData.isPrimary,
+      sortOrder: validatedData.sortOrder,
     });
 
     return res.status(201).json({

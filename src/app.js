@@ -18,6 +18,8 @@ import adminReviewRoutes from "./routes/admin-review.routes.js";
 import paymentRoutes from "./routes/payment.routes.js";
 import checkoutRoutes from "./routes/checkout.routes.js";
 import orderRoutes from "./routes/order.routes.js";
+import adminOrderRoutes from "./routes/admin-order.routes.js";
+import adminInventoryRoutes from "./routes/admin-inventory.routes.js";
 
 import { errorMiddleware } from "./middlewares/error.middleware.js";
 
@@ -36,6 +38,7 @@ app.use(cookieParser());
 
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
+
 app.use("/api/brands", brandRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/products", productRoutes);
@@ -48,9 +51,14 @@ app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/coupons", couponRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/admin/reviews", adminReviewRoutes);
+
 app.use("/api/payments", paymentRoutes);
 app.use("/api/checkout", checkoutRoutes);
 app.use("/api/orders", orderRoutes);
+
+app.use("/api/admin/orders", adminOrderRoutes);
+app.use("/api/admin/inventory", adminInventoryRoutes);
+
 
 app.use(errorMiddleware);
 
