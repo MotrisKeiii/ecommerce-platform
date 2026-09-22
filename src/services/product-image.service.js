@@ -6,70 +6,44 @@ export const createProductImage = async ({
   productId,
   imageUrl,
   publicId,
-  isPrimary,
-  sortOrder,
+  isPrimary = false,
+  sortOrder = 0,
 }) => {
-  // Kiểm tra Product có tồn tại
-  const [products] = await pool.query(
-    `
-      SELECT id
-      FROM products
-      WHERE id = ?
-    `,
-    [productId],
-  );
+  const [products] = await pool.query("SELECT id FROM products WHERE id = ?", [
+    productId,
+  ]);
 
   if (products.length === 0) {
     throw new AppError("Product not found", 404);
   }
 
-  // Nếu ảnh mới là primary,
-  // bỏ primary của các ảnh cũ
   if (isPrimary) {
     await pool.query(
-      `
-        UPDATE product_images
-        SET is_primary = 0
-        WHERE product_id = ?
-      `,
+      "UPDATE product_images SET is_primary = 0 WHERE product_id = ?",
       [productId],
     );
   }
-
   const [result] = await pool.query(
     `
-      INSERT INTO product_images
-      (
-        product_id,
-        image_url,
-        public_id,
-        is_primary,
-        sort_order
-      )
-      VALUES (?, ?, ?, ?, ?)
-    `,
-    [productId, imageUrl, publicId, isPrimary ?? false, sortOrder ?? 0],
+    INSERT INTO product_images
+    (product_id, image_url, public_id, is_primary, sort_order)
+    VALUES (?, ?, ?, ?, ?)
+  `,
+    [productId, imageUrl, publicId, isPrimary, sortOrder],
   );
 
-  return {
-    id: result.insertId,
-    productId,
-    imageUrl,
-    publicId,
-    isPrimary: isPrimary ?? false,
-    sortOrder: sortOrder ?? 0,
-  };
+  const [images] = await pool.query(
+    "SELECT * FROM product_images WHERE id = ?",
+    [result.insertId],
+  );
+
+  return images[0];
 };
 
 export const getProductImages = async (productId) => {
-  const [products] = await pool.query(
-    `
-      SELECT id
-      FROM products
-      WHERE id = ?
-    `,
-    [productId],
-  );
+  const [products] = await pool.query("SELECT id FROM products WHERE id = ?", [
+    productId,
+  ]);
 
   if (products.length === 0) {
     throw new AppError("Product not found", 404);
@@ -77,13 +51,7 @@ export const getProductImages = async (productId) => {
 
   const [images] = await pool.query(
     `
-      SELECT
-        id,
-        product_id,
-        image_url,
-        is_primary,
-        sort_order,
-        created_at
+      SELECT *
       FROM product_images
       WHERE product_id = ?
       ORDER BY sort_order ASC, id ASC
