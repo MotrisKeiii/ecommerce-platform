@@ -1,57 +1,6 @@
 import pool from "../config/database.js";
 import AppError from "../utils/AppError.js";
-
-export const createPayment = async (userId, { orderId, provider }) => {
-  // 1. Lấy order
-  const [orders] = await pool.query(
-    `
-      SELECT
-        id,
-        user_id,
-        total_amount,
-        payment_status,
-        payment_method
-      FROM orders
-      WHERE id = ?
-      AND user_id = ?
-    `,
-    [orderId, userId],
-  );
-
-  if (orders.length === 0) {
-    throw new AppError("Order not found", 404);
-  }
-
-  const order = orders[0];
-
-  // 2. Kiểm tra order đã thanh toán chưa
-  if (order.payment_status === "paid") {
-    throw new AppError("Order has already been paid", 400);
-  }
-
-  // 3. Tạo payment
-  const [result] = await pool.query(
-    `
-      INSERT INTO payments
-      (
-        order_id,
-        provider,
-        amount,
-        status
-      )
-      VALUES (?, ?, ?, 'pending')
-    `,
-    [order.id, provider, order.total_amount],
-  );
-
-  return {
-    id: result.insertId,
-    orderId: order.id,
-    provider,
-    amount: order.total_amount,
-    status: "pending",
-  };
-};
+import { restoreOrderStock } from "./inventory.service.js";
 
 export const processMockPayment = async (userId, paymentId, success) => {
   const connection = await pool.getConnection();
@@ -63,19 +12,19 @@ export const processMockPayment = async (userId, paymentId, success) => {
     // 1. Tìm payment
     const [payments] = await connection.query(
       `
-        SELECT
-          p.id,
-          p.order_id,
-          p.amount,
-          p.status,
-          o.user_id,
-          o.payment_status
-        FROM payments p
-        JOIN orders o
-          ON p.order_id = o.id
-        WHERE p.id = ?
-        AND o.user_id = ?
-      `,
+    SELECT
+      p.id,
+      p.order_id,
+      p.amount,
+      p.status,
+      p.provider,
+      o.user_id
+    FROM payments p
+    JOIN orders o ON p.order_id = o.id
+    WHERE p.id = ?
+      AND o.user_id = ?
+    FOR UPDATE
+  `,
       [paymentId, userId],
     );
 
@@ -94,14 +43,32 @@ export const processMockPayment = async (userId, paymentId, success) => {
     if (!success) {
       await connection.query(
         `
-          UPDATE payments
-          SET status = 'failed'
-          WHERE id = ?
-        `,
+      UPDATE payments
+      SET status = 'failed'
+      WHERE id = ?
+    `,
         [paymentId],
       );
 
-      await connection.commit();    
+      await connection.query(
+        `
+      UPDATE orders
+      SET
+        payment_status = 'failed',
+        status = 'cancelled'
+      WHERE id = ?
+    `,
+        [payment.order_id],
+      );
+
+      await restoreOrderStock(
+        connection,
+        payment.order_id,
+        "adjustment",
+        "Stock restored because payment failed",
+      );
+
+      await connection.commit();
 
       return {
         id: payment.id,

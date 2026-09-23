@@ -1,6 +1,7 @@
 import pool from "../config/database.js";
 import AppError from "../utils/AppError.js";
 import { canTransitionOrderStatus } from "../utils/orderStatus.js";
+import { restoreOrderStock } from "./inventory.service.js";
 
 export const getMyOrders = async (userId) => {
   const [orders] = await pool.query(
@@ -130,102 +131,20 @@ export const updateOrderStatus = async (orderId, nextStatus) => {
       );
     }
 
-    if (nextStatus === "cancelled" || nextStatus === "returned") {
-      // =========================
-      // 1. Restore stock
-      // =========================
-
-      const inventoryType = nextStatus === "returned" ? "return" : "adjustment";
+    if (newStatus === "cancelled" || newStatus === "returned") {
+      const inventoryType = newStatus === "returned" ? "return" : "adjustment";
 
       const inventoryNote =
-        nextStatus === "returned"
+        newStatus === "returned"
           ? "Stock restored because order was returned"
           : "Stock restored because order was cancelled";
 
-      const [items] = await connection.query(
-        `
-      SELECT
-        product_variant_id,
-        quantity
-      FROM order_items
-      WHERE order_id = ?
-    `,
-        [orderId],
+      await restoreOrderStock(
+        connection,
+        orderId,
+        inventoryType,
+        inventoryNote,
       );
-
-      for (const item of items) {
-        await connection.query(
-          `
-        UPDATE product_variants
-        SET stock = stock + ?
-        WHERE id = ?
-      `,
-          [item.quantity, item.product_variant_id],
-        );
-
-        await connection.query(
-          `
-        INSERT INTO inventory_transactions (
-          product_variant_id,
-          type,
-          quantity,
-          reference_type,
-          reference_id,
-          note
-        )
-        VALUES (?, ?, ?, ?, ?, ?)
-      `,
-          [
-            item.product_variant_id,
-            inventoryType,
-            item.quantity,
-            "order",
-            orderId,
-            inventoryNote,
-          ],
-        );
-      }
-
-      // =========================
-      // 2. Refund payment
-      // =========================
-
-      const [payments] = await connection.query(
-        `
-      SELECT
-        id,
-        status,
-        amount
-      FROM payments
-      WHERE order_id = ?
-      FOR UPDATE
-    `,
-        [orderId],
-      );
-
-      if (payments.length > 0) {
-        const payment = payments[0];
-
-        if (payment.status === "success") {
-          await connection.query(
-            `
-          UPDATE payments
-          SET status = 'refunded'
-          WHERE id = ?
-        `,
-            [payment.id],
-          );
-
-          await connection.query(
-            `
-          UPDATE orders
-          SET payment_status = 'refunded'
-          WHERE id = ?
-        `,
-            [orderId],
-          );
-        }
-      }
     }
 
     await connection.query(
