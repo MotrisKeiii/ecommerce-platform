@@ -98,71 +98,93 @@ export const getMyOrderById = async (userId, orderId) => {
   };
 };
 
+/**
+ * Đổi trạng thái đơn TRONG một transaction có sẵn (connection do nơi gọi mở).
+ * Dùng chung cho: admin đổi trạng thái, thanh toán thất bại...
+ *
+ * Vì sao hoàn kho chỉ xảy ra 1 lần (idempotent)?
+ *  - Khóa dòng order bằng FOR UPDATE -> 2 request cùng lúc phải xếp hàng.
+ *  - cancelled/returned là trạng thái cuối (không có đường đi ra) nên request thứ 2
+ *    sẽ bị canTransitionOrderStatus() từ chối -> không thể cộng kho lần nữa.
+ */
+export const changeOrderStatusInTransaction = async (
+  connection,
+  orderId,
+  nextStatus,
+  { note } = {},
+) => {
+  const [orders] = await connection.query(
+    `
+      SELECT id, status, coupon_code
+      FROM orders
+      WHERE id = ?
+      FOR UPDATE
+    `,
+    [orderId],
+  );
+
+  if (orders.length === 0) {
+    throw new AppError("Order not found", 404);
+  }
+
+  const order = orders[0];
+
+  if (!canTransitionOrderStatus(order.status, nextStatus)) {
+    throw new AppError(
+      `Cannot change order status from ${order.status} to ${nextStatus}`,
+      400,
+    );
+  }
+
+  if (nextStatus === "cancelled" || nextStatus === "returned") {
+    const isReturn = nextStatus === "returned";
+
+    await restoreOrderStock(
+      connection,
+      orderId,
+      isReturn ? "return" : "adjustment",
+      note ||
+        (isReturn
+          ? "Stock restored because order was returned"
+          : "Stock restored because order was cancelled"),
+    );
+  }
+
+  // Hủy đơn -> trả lại lượt dùng coupon (đơn trả hàng thì coupon đã được dùng thật nên không trả)
+  if (nextStatus === "cancelled" && order.coupon_code) {
+    await connection.query(
+      `
+        UPDATE coupons
+        SET used_count = GREATEST(used_count - 1, 0)
+        WHERE code = ?
+      `,
+      [order.coupon_code],
+    );
+  }
+
+  await connection.query(`UPDATE orders SET status = ? WHERE id = ?`, [
+    nextStatus,
+    orderId,
+  ]);
+
+  return { id: order.id, previousStatus: order.status, status: nextStatus };
+};
+
 export const updateOrderStatus = async (orderId, nextStatus) => {
   const connection = await pool.getConnection();
 
   try {
     await connection.beginTransaction();
 
-    const [orders] = await connection.query(
-      `
-        SELECT
-          id,
-          status
-        FROM orders
-        WHERE id = ?
-        FOR UPDATE
-      `,
-      [orderId],
-    );
-
-    if (orders.length === 0) {
-      throw new AppError("Order not found", 404);
-    }
-
-    const order = orders[0];
-
-    const canTransition = canTransitionOrderStatus(order.status, nextStatus);
-
-    if (!canTransition) {
-      throw new AppError(
-        `Cannot change order status from ${order.status} to ${nextStatus}`,
-        400,
-      );
-    }
-
-    if (newStatus === "cancelled" || newStatus === "returned") {
-      const inventoryType = newStatus === "returned" ? "return" : "adjustment";
-
-      const inventoryNote =
-        newStatus === "returned"
-          ? "Stock restored because order was returned"
-          : "Stock restored because order was cancelled";
-
-      await restoreOrderStock(
-        connection,
-        orderId,
-        inventoryType,
-        inventoryNote,
-      );
-    }
-
-    await connection.query(
-      `
-        UPDATE orders
-        SET status = ?
-        WHERE id = ?
-      `,
-      [nextStatus, orderId],
+    const result = await changeOrderStatusInTransaction(
+      connection,
+      orderId,
+      nextStatus,
     );
 
     await connection.commit();
 
-    return {
-      id: order.id,
-      previousStatus: order.status,
-      status: nextStatus,
-    };
+    return result;
   } catch (error) {
     await connection.rollback();
     throw error;
