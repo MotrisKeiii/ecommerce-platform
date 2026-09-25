@@ -32,7 +32,10 @@ export const createProductVariantController = async (req, res, next) => {
 
 export const getProductVariantsController = async (req, res, next) => {
   try {
-    const variants = await getProductVariants(req.params.productId);
+    const variants = await getProductVariants(
+      req.params.productId,
+      req.baseUrl.startsWith("/api/admin/"),
+    );
 
     return res.status(200).json({
       success: true,
@@ -46,7 +49,10 @@ export const getProductVariantsController = async (req, res, next) => {
 
 export const getProductVariantByIdController = async (req, res, next) => {
   try {
-    const variant = await getProductVariantById(req.params.id);
+    const variant = await getProductVariantById(
+      req.params.id,
+      req.baseUrl.startsWith("/api/admin/"),
+    );
 
     return res.status(200).json({
       success: true,

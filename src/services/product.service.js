@@ -73,50 +73,36 @@ export const createProduct = async ({
   };
 };
 
-export const getProducts = async () => {
-  const [products] = await pool.query(
-    `
-      SELECT
-        p.id,
-        p.name,
-        p.slug,
-        p.description,
-        p.brand_id,
-        b.name AS brand_name,
-        p.category_id,
-        c.name AS category_name,
-        p.status,
-        p.created_at,
-        p.updated_at
-      FROM products p
-      JOIN brands b ON p.brand_id = b.id
-      JOIN categories c ON p.category_id = c.id
-      ORDER BY p.id DESC
-    `,
-  );
+export const getProducts = async (includeHidden = false) => {
+  const [products] = await pool.query(`
+    SELECT
+      p.id, p.name, p.slug, p.description, p.brand_id,
+      b.name AS brand_name,
+      p.category_id, c.name AS category_name,
+      p.status, p.created_at, p.updated_at
+    FROM products p
+    JOIN brands b ON p.brand_id = b.id
+    JOIN categories c ON p.category_id = c.id
+    ${includeHidden ? "" : "WHERE p.status = 'active'"}
+    ORDER BY p.id DESC
+  `);
 
   return products;
 };
 
-export const getProductById = async (id) => {
+export const getProductById = async (id, includeHidden = false) => {
   const [products] = await pool.query(
     `
       SELECT
-        p.id,
-        p.name,
-        p.slug,
-        p.description,
-        p.brand_id,
+        p.id, p.name, p.slug, p.description, p.brand_id,
         b.name AS brand_name,
-        p.category_id,
-        c.name AS category_name,
-        p.status,
-        p.created_at,
-        p.updated_at
+        p.category_id, c.name AS category_name,
+        p.status, p.created_at, p.updated_at
       FROM products p
       JOIN brands b ON p.brand_id = b.id
       JOIN categories c ON p.category_id = c.id
       WHERE p.id = ?
+      ${includeHidden ? "" : "AND p.status = 'active'"}
     `,
     [id],
   );

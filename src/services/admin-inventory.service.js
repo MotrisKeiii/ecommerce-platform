@@ -36,6 +36,10 @@ export const createInventoryTransaction = async ({
       throw new AppError("Product variant is not active", 400);
     }
 
+    if (variant.stock + quantity < 0) {
+      throw new AppError("Insufficient stock for adjustment", 400);
+    }
+
     await connection.query(
       `
         UPDATE product_variants

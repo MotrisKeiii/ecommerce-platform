@@ -29,7 +29,7 @@ export const createProductController = async (req, res, next) => {
 
 export const getProductsController = async (req, res, next) => {
   try {
-    const products = await getProducts();
+    const products = await getProducts(req.baseUrl.startsWith("/api/admin/"));
 
     return res.status(200).json({
       success: true,
@@ -43,7 +43,10 @@ export const getProductsController = async (req, res, next) => {
 
 export const getProductByIdController = async (req, res, next) => {
   try {
-    const product = await getProductById(req.params.id);
+    const product = await getProductById(
+      req.params.id,
+      req.baseUrl.startsWith("/api/admin/"),
+    );
 
     return res.status(200).json({
       success: true,

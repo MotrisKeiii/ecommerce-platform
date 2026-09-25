@@ -72,23 +72,17 @@ export const createProductVariant = async ({
   };
 };
 
-export const getProductVariants = async (productId) => {
+export const getProductVariants = async (productId, includeHidden = false) => {
   const [variants] = await pool.query(
     `
       SELECT
-        id,
-        product_id,
-        sku,
-        price,
-        compare_at_price,
-        stock,
-        attributes,
-        status,
-        created_at,
-        updated_at
-      FROM product_variants
-      WHERE product_id = ?
-      ORDER BY id DESC
+        pv.id, pv.product_id, pv.sku, pv.price, pv.compare_at_price,
+        pv.stock, pv.attributes, pv.status, pv.created_at, pv.updated_at
+      FROM product_variants pv
+      JOIN products p ON p.id = pv.product_id
+      WHERE pv.product_id = ?
+      ${includeHidden ? "" : "AND pv.status = 'active' AND p.status = 'active'"}
+      ORDER BY pv.id DESC
     `,
     [productId],
   );
@@ -96,22 +90,16 @@ export const getProductVariants = async (productId) => {
   return variants;
 };
 
-export const getProductVariantById = async (id) => {
+export const getProductVariantById = async (id, includeHidden = false) => {
   const [variants] = await pool.query(
     `
       SELECT
-        id,
-        product_id,
-        sku,
-        price,
-        compare_at_price,
-        stock,
-        attributes,
-        status,
-        created_at,
-        updated_at
-      FROM product_variants
-      WHERE id = ?
+        pv.id, pv.product_id, pv.sku, pv.price, pv.compare_at_price,
+        pv.stock, pv.attributes, pv.status, pv.created_at, pv.updated_at
+      FROM product_variants pv
+      JOIN products p ON p.id = pv.product_id
+      WHERE pv.id = ?
+      ${includeHidden ? "" : "AND pv.status = 'active' AND p.status = 'active'"}
     `,
     [id],
   );

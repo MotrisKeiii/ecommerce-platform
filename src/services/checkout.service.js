@@ -20,24 +20,36 @@ export const checkout = async (
   try {
     await connection.beginTransaction();
 
-    // 1. Đọc VÀ KHÓA giỏ hàng + variant.
-    //  - FOR UPDATE OF ci, pv: chỉ khóa cart_items và product_variants (không khóa bảng products,
-    //    để các đơn khác nhau của cùng 1 sản phẩm không bị xếp hàng vô ích). Cần MySQL 8+.
-    //  - ORDER BY product_variant_id: mọi transaction khóa theo CÙNG một thứ tự
-    //    -> tránh deadlock (A khóa 1 rồi 2, B khóa 2 rồi 1).
-    //  - Bấm đúp: request thứ 2 bị chặn ở đây tới khi request 1 commit (giỏ đã bị xóa)
-    //    -> đọc ra giỏ rỗng -> "Cart is empty" thay vì tạo đơn thứ 2.
+    // Khóa giỏ hàng để hai request checkout của cùng user không tạo hai đơn.
+    const [lockedCart] = await connection.query(
+      `SELECT id FROM cart_items WHERE user_id = ? ORDER BY id FOR UPDATE`,
+      [userId],
+    );
+
+    if (lockedCart.length === 0) {
+      throw new AppError("Cart is empty", 400);
+    }
+
+    // Khóa từng biến thể theo cùng một thứ tự.
+    const [cartVariants] = await connection.query(
+      `SELECT product_variant_id
+       FROM cart_items
+       WHERE user_id = ?
+       ORDER BY product_variant_id`,
+      [userId],
+    );
+
+    for (const variant of cartVariants) {
+      await connection.query(
+        `SELECT id FROM product_variants WHERE id = ? FOR UPDATE`,
+        [variant.product_variant_id],
+      );
+    }
+
     const [cartItems] = await connection.query(
       `
-        SELECT
-          ci.id,
-          ci.product_variant_id,
-          ci.quantity,
-          pv.product_id,
-          pv.sku,
-          pv.price,
-          pv.stock,
-          pv.attributes,
+        SELECT ci.id, ci.product_variant_id, ci.quantity,
+          pv.product_id, pv.sku, pv.price, pv.stock, pv.attributes,
           pv.status AS variant_status,
           p.name AS product_name,
           p.status AS product_status
@@ -46,7 +58,6 @@ export const checkout = async (
         JOIN products p ON pv.product_id = p.id
         WHERE ci.user_id = ?
         ORDER BY ci.product_variant_id ASC
-        FOR UPDATE OF ci, pv
       `,
       [userId],
     );

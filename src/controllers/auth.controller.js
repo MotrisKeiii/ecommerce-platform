@@ -41,7 +41,7 @@ export const loginController = async (req, res, next) => {
       httpOnly: true,
       secure: false,
       sameSite: "lax",
-      maxAge: 24 * 60 * 60 * 1000,
+      maxAge: (jwt.decode(token).exp - Math.floor(Date.now() / 1000)) * 1000,
     });
 
     return res.status(200).json({

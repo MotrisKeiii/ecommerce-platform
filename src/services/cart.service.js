@@ -5,9 +5,11 @@ export const addToCart = async (userId, { productVariantId, quantity }) => {
   // 1. Kiểm tra variant tồn tại
   const [variants] = await pool.query(
     `
-      SELECT id, product_id, price, stock, status
-      FROM product_variants
-      WHERE id = ?
+      SELECT pv.id, pv.product_id, pv.price, pv.stock, pv.status,
+        p.status AS product_status
+      FROM product_variants pv
+      JOIN products p ON p.id = pv.product_id
+      WHERE pv.id = ?
     `,
     [productVariantId],
   );
@@ -19,7 +21,7 @@ export const addToCart = async (userId, { productVariantId, quantity }) => {
   const variant = variants[0];
 
   // 2. Kiểm tra variant có đang bán không
-  if (variant.status !== "active") {
+  if (variant.status !== "active" || variant.product_status !== "active") {
     throw new AppError("Product variant is not available", 400);
   }
 

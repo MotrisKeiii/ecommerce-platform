@@ -20,6 +20,8 @@ import checkoutRoutes from "./routes/checkout.routes.js";
 import orderRoutes from "./routes/order.routes.js";
 import adminOrderRoutes from "./routes/admin-order.routes.js";
 import adminInventoryRoutes from "./routes/admin-inventory.routes.js";
+import { authMiddleware } from "./middlewares/auth.middleware.js";
+import { roleMiddleware } from "./middlewares/role.middleware.js";
 
 import { errorMiddleware } from "./middlewares/error.middleware.js";
 
@@ -41,6 +43,19 @@ app.use("/api/users", userRoutes);
 
 app.use("/api/brands", brandRoutes);
 app.use("/api/categories", categoryRoutes);
+app.use(
+  "/api/admin/products",
+  authMiddleware,
+  roleMiddleware("admin"),
+  productRoutes,
+);
+
+app.use(
+  "/api/admin/product-variants",
+  authMiddleware,
+  roleMiddleware("admin"),
+  productVariantRoutes,
+);
 app.use("/api/products", productRoutes);
 app.use("/api/product-variants", productVariantRoutes);
 app.use("/api/products", productImageRoutes);
@@ -59,9 +74,6 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/admin/orders", adminOrderRoutes);
 app.use("/api/admin/inventory", adminInventoryRoutes);
 
-
 app.use(errorMiddleware);
 
 export default app;
-
-
