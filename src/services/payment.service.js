@@ -1,30 +1,30 @@
 import pool from "../config/database.js";
 import AppError from "../utils/AppError.js";
-import { restoreOrderStock } from "./inventory.service.js";
+import { changeOrderStatusInTransaction } from "./order.service.js";
 
 export const processMockPayment = async (userId, paymentId, success) => {
   const connection = await pool.getConnection();
 
   try {
-    // Bắt đầu transaction
     await connection.beginTransaction();
 
-    // 1. Tìm payment
+    // 1. Tìm payment (khóa payment + order để tránh xử lý song song)
     const [payments] = await connection.query(
       `
-    SELECT
-      p.id,
-      p.order_id,
-      p.amount,
-      p.status,
-      p.provider,
-      o.user_id
-    FROM payments p
-    JOIN orders o ON p.order_id = o.id
-    WHERE p.id = ?
-      AND o.user_id = ?
-    FOR UPDATE
-  `,
+        SELECT
+          p.id,
+          p.order_id,
+          p.amount,
+          p.status,
+          p.provider,
+          o.user_id,
+          o.status AS order_status
+        FROM payments p
+        JOIN orders o ON p.order_id = o.id
+        WHERE p.id = ?
+          AND o.user_id = ?
+        FOR UPDATE
+      `,
       [paymentId, userId],
     );
 
@@ -34,38 +34,38 @@ export const processMockPayment = async (userId, paymentId, success) => {
 
     const payment = payments[0];
 
-    // 2. Không xử lý payment đã hoàn tất
-    if (payment.status === "success" || payment.status === "refunded") {
+    // 2. Chỉ cho xử lý khi payment còn 'pending' (failed/success/refunded đều bị chặn)
+    if (payment.status !== "pending") {
       throw new AppError("Payment cannot be processed", 400);
     }
 
-    // 3. Thanh toán thất bại
+    // 3. Chỉ payment mock mới đi qua endpoint này (không cho "trả" đơn COD/momo bằng mock)
+    if (payment.provider !== "mock") {
+      throw new AppError("This payment is not a mock payment", 400);
+    }
+
+    // 4. Đơn phải còn 'pending' (đơn đã hủy/đã xử lý thì không được thanh toán)
+    if (payment.order_status !== "pending") {
+      throw new AppError("Order is not awaiting payment", 400);
+    }
+
+    // 5. Thanh toán thất bại -> hủy đơn bằng hàm dùng chung (hoàn kho + trả coupon 1 lần)
     if (!success) {
       await connection.query(
-        `
-      UPDATE payments
-      SET status = 'failed'
-      WHERE id = ?
-    `,
+        `UPDATE payments SET status = 'failed' WHERE id = ?`,
         [paymentId],
       );
 
       await connection.query(
-        `
-      UPDATE orders
-      SET
-        payment_status = 'failed',
-        status = 'cancelled'
-      WHERE id = ?
-    `,
+        `UPDATE orders SET payment_status = 'failed' WHERE id = ?`,
         [payment.order_id],
       );
 
-      await restoreOrderStock(
+      await changeOrderStatusInTransaction(
         connection,
         payment.order_id,
-        "adjustment",
-        "Stock restored because payment failed",
+        "cancelled",
+        { note: "Stock restored because payment failed" },
       );
 
       await connection.commit();
@@ -78,30 +78,21 @@ export const processMockPayment = async (userId, paymentId, success) => {
       };
     }
 
-    // 4. Thanh toán thành công
+    // 6. Thanh toán thành công
     await connection.query(
       `
         UPDATE payments
-        SET
-          status = 'success',
-          transaction_id = ?,
-          paid_at = NOW()
+        SET status = 'success', transaction_id = ?, paid_at = NOW()
         WHERE id = ?
       `,
       [`MOCK-${payment.id}-${Date.now()}`, paymentId],
     );
 
-    // 5. Cập nhật Order
     await connection.query(
-      `
-        UPDATE orders
-        SET payment_status = 'paid'
-        WHERE id = ?
-      `,
+      `UPDATE orders SET payment_status = 'paid' WHERE id = ?`,
       [payment.order_id],
     );
 
-    // 6. Xác nhận toàn bộ transaction
     await connection.commit();
 
     return {
@@ -111,12 +102,9 @@ export const processMockPayment = async (userId, paymentId, success) => {
       status: "success",
     };
   } catch (error) {
-    // Có lỗi → hủy toàn bộ thay đổi
     await connection.rollback();
-
     throw error;
   } finally {
-    // Trả connection về pool
     connection.release();
   }
 };
