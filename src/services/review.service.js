@@ -153,7 +153,7 @@ export const updateReview = async (userId, reviewId, { rating, comment }) => {
   // 2. PATCH → giữ lại dữ liệu cũ nếu field không được gửi
   const updatedReview = {
     rating: rating ?? currentReview.rating,
-    comment: comment ?? currentReview.comment,
+    comment: comment !== undefined ? comment : currentReview.comment,
   };
 
   // 3. Cập nhật review
@@ -162,7 +162,8 @@ export const updateReview = async (userId, reviewId, { rating, comment }) => {
       UPDATE reviews
       SET
         rating = ?,
-        comment = ?
+        comment = ?,
+        status = 'pending'
       WHERE id = ?
       AND user_id = ?
     `,
@@ -173,6 +174,7 @@ export const updateReview = async (userId, reviewId, { rating, comment }) => {
     id: Number(reviewId),
     rating: updatedReview.rating,
     comment: updatedReview.comment,
+    status: "pending",
   };
 };
 
