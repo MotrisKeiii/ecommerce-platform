@@ -148,6 +148,7 @@ export const updateCoupon = async (id, data) => {
         min_order_amount,
         max_discount_amount,
         usage_limit,
+        used_count,
         start_at,
         end_at,
         status
@@ -163,19 +164,33 @@ export const updateCoupon = async (id, data) => {
 
   const currentCoupon = coupons[0];
 
+  // `??` coi null như "không gửi" nên không thể xóa giá trị.
+  // Dùng `!== undefined` để phân biệt "không gửi" (giữ cũ) và "gửi null" (đặt null).
+  const pick = (key, current) =>
+    data[key] !== undefined ? data[key] : current;
+
   // 2. Lấy dữ liệu mới, nếu field không gửi thì giữ dữ liệu cũ
   const updatedCoupon = {
-    code: data.code ?? currentCoupon.code,
-    discountType: data.discountType ?? currentCoupon.discount_type,
-    discountValue: data.discountValue ?? currentCoupon.discount_value,
-    minOrderAmount: data.minOrderAmount ?? currentCoupon.min_order_amount,
-    maxDiscountAmount:
-      data.maxDiscountAmount ?? currentCoupon.max_discount_amount,
-    usageLimit: data.usageLimit ?? currentCoupon.usage_limit,
-    startAt: data.startAt ?? currentCoupon.start_at,
-    endAt: data.endAt ?? currentCoupon.end_at,
-    status: data.status ?? currentCoupon.status,
+    code: pick("code", currentCoupon.code),
+    discountType: pick("discountType", currentCoupon.discount_type),
+    discountValue: pick("discountValue", currentCoupon.discount_value),
+    minOrderAmount: pick("minOrderAmount", currentCoupon.min_order_amount),
+    maxDiscountAmount: pick(
+      "maxDiscountAmount",
+      currentCoupon.max_discount_amount,
+    ),
+    usageLimit: pick("usageLimit", currentCoupon.usage_limit),
+    startAt: pick("startAt", currentCoupon.start_at),
+    endAt: pick("endAt", currentCoupon.end_at),
+    status: pick("status", currentCoupon.status),
   };
+
+  if (
+    updatedCoupon.usageLimit !== null &&
+    updatedCoupon.usageLimit < currentCoupon.used_count
+  ) {
+    throw new AppError("Usage limit cannot be lower than used count", 400);
+  }
 
   // 3. Kiểm tra thời gian
   if (new Date(updatedCoupon.endAt) <= new Date(updatedCoupon.startAt)) {
@@ -266,9 +281,18 @@ export const deleteCoupon = async (id) => {
   );
 };
 
-export const validateCoupon = async (code, orderAmount) => {
-  // 1. Tìm coupon
-  const [coupons] = await pool.query(
+/**
+ * Kiểm tra coupon và tính số tiền giảm.
+ * @param connection  mặc định dùng pool; khi checkout truyền connection của transaction
+ * @param lock        true -> SELECT ... FOR UPDATE để 2 đơn cùng lúc không vượt usage_limit
+ */
+export const validateCoupon = async (
+  code,
+  orderAmount,
+  connection = pool,
+  { lock = false } = {},
+) => {
+  const [coupons] = await connection.query(
     `
       SELECT
         id,
@@ -284,6 +308,7 @@ export const validateCoupon = async (code, orderAmount) => {
         status
       FROM coupons
       WHERE code = ?
+      ${lock ? "FOR UPDATE" : ""}
     `,
     [code],
   );
@@ -294,59 +319,50 @@ export const validateCoupon = async (code, orderAmount) => {
 
   const coupon = coupons[0];
 
-  // 2. Kiểm tra trạng thái
   if (coupon.status !== "active") {
     throw new AppError("Coupon is inactive", 400);
   }
 
-  // 3. Kiểm tra thời gian bắt đầu
   const now = new Date();
 
   if (now < new Date(coupon.start_at)) {
     throw new AppError("Coupon is not available yet", 400);
   }
 
-  // 4. Kiểm tra thời gian hết hạn
   if (now > new Date(coupon.end_at)) {
     throw new AppError("Coupon has expired", 400);
   }
 
-  // 5. Kiểm tra số lần sử dụng
   if (coupon.usage_limit !== null && coupon.used_count >= coupon.usage_limit) {
     throw new AppError("Coupon usage limit reached", 400);
   }
 
-  // 6. Kiểm tra giá trị đơn hàng tối thiểu
-  if (orderAmount < coupon.min_order_amount) {
-    throw new AppError(
-      `Minimum order amount is ${coupon.min_order_amount}`,
-      400,
-    );
+  // mysql2 trả DECIMAL dạng CHUỖI -> ép sang number trước khi tính/so sánh
+  const discountValue = Number(coupon.discount_value);
+  const minOrderAmount = Number(coupon.min_order_amount);
+  const maxDiscountAmount =
+    coupon.max_discount_amount === null
+      ? null
+      : Number(coupon.max_discount_amount);
+
+  if (orderAmount < minOrderAmount) {
+    throw new AppError(`Minimum order amount is ${minOrderAmount}`, 400);
   }
 
-  // 7. Tính discount
   let discountAmount = 0;
 
   if (coupon.discount_type === "percentage") {
-    discountAmount = (orderAmount * coupon.discount_value) / 100;
+    discountAmount = (orderAmount * discountValue) / 100;
 
-    // Không cho giảm vượt quá mức tối đa
-    if (
-      coupon.max_discount_amount !== null &&
-      discountAmount > coupon.max_discount_amount
-    ) {
-      discountAmount = coupon.max_discount_amount;
+    if (maxDiscountAmount !== null && discountAmount > maxDiscountAmount) {
+      discountAmount = maxDiscountAmount;
     }
+  } else if (coupon.discount_type === "fixed") {
+    discountAmount = discountValue;
   }
 
-  if (coupon.discount_type === "fixed") {
-    discountAmount = coupon.discount_value;
-  }
-
-  // 8. Không cho discount lớn hơn giá trị đơn
-  if (discountAmount > orderAmount) {
-    discountAmount = orderAmount;
-  }
+  // Không giảm quá giá trị đơn; làm tròn về số nguyên (VND)
+  discountAmount = Math.round(Math.min(discountAmount, orderAmount));
 
   return {
     couponId: coupon.id,
